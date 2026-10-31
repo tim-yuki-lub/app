@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>明日の支度</title>
+<meta name="description" content="明日の出発時刻を入れると、今夜何時に何をすればいいかが出ます">
+<meta name="theme-color" content="#1c1f3a">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="明日の支度">
+<style>
+  :root {
+    --bg: #f4f4f8;
+    --fg: #1b1c28;
+    --muted: #6b6d80;
+    --card: #ffffff;
+    --line: #e2e3ea;
+    --accent: #3f3fa8;
+    --accent-fg: #ffffff;
+    --chip: #ededf4;
+    --chip-on: #3f3fa8;
+    --chip-on-fg: #ffffff;
+    --now: #e07b00;
+    --danger: #c0392b;
+    --sa-top: env(safe-area-inset-top, 0px);
+    --sa-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111220;
+      --fg: #ececf3;
+      --muted: #9a9cb3;
+      --card: #1b1d30;
+      --line: #2b2e48;
+      --accent: #8d8cff;
+      --accent-fg: #101128;
+      --chip: #262941;
+      --chip-on: #8d8cff;
+      --chip-on-fg: #101128;
+      --now: #ffb259;
+      --danger: #ff7b6e;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111220; --fg: #ececf3; --muted: #9a9cb3; --card: #1b1d30; --line: #2b2e48;
+    --accent: #8d8cff; --accent-fg: #101128; --chip: #262941; --chip-on: #8d8cff; --chip-on-fg: #101128;
+    --now: #ffb259; --danger: #ff7b6e;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif;
+    font-size: 16px; line-height: 1.5;
+    padding: calc(var(--sa-top) + 12px) 16px calc(var(--sa-bottom) + 40px);
+    -webkit-tap-highlight-color: transparent;
+  }
+  main { max-width: 480px; margin: 0 auto; }
+  header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  header h1 { font-size: 18px; margin: 0; font-weight: 700; letter-spacing: .02em; }
+  .iconbtn { border: 0; background: transparent; color: var(--muted); font-size: 22px; padding: 6px 8px; border-radius: 10px; cursor: pointer; }
+  .iconbtn:active { background: var(--chip); }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin: 12px 0; }
+  .card h2 { font-size: 13px; font-weight: 600; color: var(--muted); margin: 0 0 10px; letter-spacing: .04em; }
+
+  .dep label { display: block; font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .04em; margin-bottom: 4px; }
+  .dep input[type=time] {
+    font: inherit; font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums;
+    border: 0; background: transparent; color: var(--fg); padding: 0; width: 100%; max-width: 100%;
+    -webkit-appearance: none; appearance: none;
+  }
+  .dep input[type=time]::-webkit-date-and-time-value { text-align: left; }
+
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    border: 0; border-radius: 999px; padding: 8px 14px; font: inherit; font-size: 15px;
+    background: var(--chip); color: var(--fg); cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .chip.on { background: var(--chip-on); color: var(--chip-on-fg); }
+  .chip small { opacity: .75; font-size: 12px; }
+  .chip.add { background: transparent; border: 1.5px dashed var(--line); color: var(--muted); }
+  .chip .x { margin-left: 2px; font-weight: 700; opacity: .8; }
+  .slotname { font-size: 12px; color: var(--muted); margin: 10px 0 6px; }
+  .slotname:first-of-type { margin-top: 0; }
+
+  .timeline { list-style: none; margin: 0; padding: 0; }
+  .timeline li { display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); align-items: start; }
+  .timeline li:first-child { border-top: 0; padding-top: 0; }
+  .timeline .t { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.2; }
+  .timeline .t small { display: block; font-size: 11px; font-weight: 500; color: var(--muted); }
+  .timeline .what { font-size: 16px; font-weight: 600; }
+  .timeline .sub { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .timeline li.next .t, .timeline li.next .what { color: var(--now); }
+  .timeline li.past { opacity: .45; }
+  .nowline { font-size: 13px; color: var(--now); font-weight: 600; margin: 0 0 10px; }
+  .warn { font-size: 13px; color: var(--danger); margin-top: 8px; }
+
+  .settings label { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); font-size: 15px; }
+  .settings label:first-of-type { border-top: 0; }
+  .settings input { font: inherit; font-size: 17px; font-variant-numeric: tabular-nums; width: 88px; text-align: right; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--fg); }
+  .settings .unit { color: var(--muted); font-size: 13px; margin-left: 6px; }
+  .settings .row { display: flex; align-items: center; }
+
+  .hint { font-size: 13px; color: var(--muted); }
+  .hint ol { padding-left: 20px; margin: 6px 0 0; }
+  .btn { font: inherit; font-size: 15px; font-weight: 600; border: 0; border-radius: 12px; padding: 12px 16px; background: var(--accent); color: var(--accent-fg); cursor: pointer; width: 100%; }
+  .btn.ghost { background: var(--chip); color: var(--fg); }
+
+  dialog { border: 0; border-radius: 16px; padding: 0; background: var(--card); color: var(--fg); width: min(92vw, 400px); }
+  dialog::backdrop { background: rgba(0,0,0,.4); }
+  dialog form { padding: 18px; display: grid; gap: 12px; }
+  dialog h3 { margin: 0; font-size: 16px; }
+  dialog label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  dialog input, dialog select { font: inherit; font-size: 16px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--fg); width: 100%; }
+  dialog .actions { display: flex; gap: 8px; }
+  dialog .actions .btn { flex: 1; }
+  dialog .del { background: transparent; color: var(--danger); }
+  .hidden { display: none !important; }
+  footer { text-align: center; color: var(--muted); font-size: 12px; margin-top: 20px; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>明日の支度</h1>
+    <button class="iconbtn" id="btnSettings" aria-label="設定">⚙︎</button>
+  </header>
+
+  <div id="lineBanner" class="card hidden">
+    <p class="hint" style="margin:0 0 10px">LINEの中のブラウザで開いています。ホーム画面に追加するには、Safariで開いてください。</p>
+    <a id="lineOpen" class="btn" style="display:block;text-align:center;text-decoration:none" href="#">Safariで開く</a>
+  </div>
+
+  <section class="card">
+    <div class="dep">
+      <label for="departure">明日は何時に出発？</label>
+      <input type="time" id="departure" step="300">
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>今夜のタスク <span id="planDateLabel" style="font-weight:400"></span></h2>
+    <div id="taskSlots"></div>
+  </section>
+
+  <section class="card">
+    <h2>今夜の流れ</h2>
+    <p class="nowline hidden" id="nowline"></p>
+    <ul class="timeline" id="timeline"></ul>
+    <p class="warn hidden" id="warn"></p>
+  </section>
+
+  <section class="card settings hidden" id="settings">
+    <h2>設定</h2>
+    <label>朝の準備 <span class="row"><input type="number" id="setPrep" min="0" step="5" inputmode="numeric"><span class="unit">分</span></span></label>
+    <label>睡眠 <span class="row"><input type="number" id="setSleep" min="0" step="0.5" inputmode="decimal"><span class="unit">時間</span></span></label>
+    <label>お風呂から寝るまで（最短） <span class="row"><input type="number" id="setGapMin" min="0" step="15" inputmode="numeric"><span class="unit">分</span></span></label>
+    <label>お風呂から寝るまで（長くて） <span class="row"><input type="number" id="setGapMax" min="0" step="15" inputmode="numeric"><span class="unit">分</span></span></label>
+    <p class="hint" style="margin:12px 0 0">タスクの名前や所要時間は、チップを長押しすると変えられます。</p>
+  </section>
+
+  <section class="card hint hidden" id="installHint">
+    <strong>ホーム画面に置くと、アプリみたいに開けます</strong>
+    <ol>
+      <li>Safariの下にある「共有」ボタン（□に↑）を押す</li>
+      <li>「ホーム画面に追加」を選ぶ</li>
+      <li>右上の「追加」を押す</li>
+    </ol>
+  </section>
+
+  <footer id="version"></footer>
+</main>
+
+<dialog id="taskDialog">
+  <form method="dialog" id="taskForm">
+    <h3 id="taskDialogTitle">タスクを追加</h3>
+    <label>名前 <input type="text" id="tName" required maxlength="20" placeholder="例：ゴミ出し"></label>
+    <label>かかる時間 <input type="number" id="tMin" required min="1" max="600" step="5" inputmode="numeric" placeholder="分"></label>
+    <label>いつやる
+      <select id="tSlot">
+        <option value="beforeBath">夜・お風呂の前</option>
+        <option value="afterBath">夜・お風呂のあと</option>
+        <option value="morning">朝・出発の前</option>
+      </select>
+    </label>
+    <label style="display:flex;align-items:center;gap:8px;flex-direction:row"><input type="checkbox" id="tDefault" style="width:auto"> 毎日やる（最初からオンにする）</label>
+    <div class="actions">
+      <button type="button" class="btn del hidden" id="tDelete">削除</button>
+      <button type="button" class="btn ghost" id="tCancel">やめる</button>
+      <button type="submit" class="btn">保存</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+(() => {
+  const VERSION = '1.0.0';
+  const KEY = 'shitaku.v1';
+  const SLOTS = [
+    { id: 'beforeBath', label: 'お風呂の前に' },
+    { id: 'afterBath',  label: 'お風呂のあと、寝るまでに' },
+    { id: 'morning',    label: '朝、出発の前に' },
+  ];
+
+  const defaults = () => ({
+    settings: { prepMin: 60, sleepMin: 480, gapMin: 120, gapMax: 180 },
+    departure: '08:00',
+    tasks: [
+      { id: 'gomi',    name: 'ゴミ出し',       min: 5,  slot: 'morning',    defaultOn: false },
+      { id: 'bento',   name: 'お弁当',         min: 20, slot: 'morning',    defaultOn: false },
+      { id: 'sentaku', name: '洗濯',           min: 40, slot: 'beforeBath', defaultOn: false },
+      { id: 'araimono',name: '洗い物',         min: 15, slot: 'beforeBath', defaultOn: true  },
+      { id: 'mochimono',name:'明日の持ち物',   min: 10, slot: 'afterBath',  defaultOn: true  },
+    ],
+    days: {},
+  });
+
+  let state = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return defaults();
+      const s = JSON.parse(raw);
+      const d = defaults();
+      return { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) }, days: s.days || {} };
+    } catch (e) { return defaults(); }
+  }
+  function save() {
+    try {
+      // 古い日のオンオフは消す（直近14日だけ残す）
+      const keep = {};
+      Object.keys(state.days).sort().slice(-14).forEach(k => keep[k] = state.days[k]);
+      state.days = keep;
+      localStorage.setItem(KEY, JSON.stringify(state));
+    } catch (e) {}
+  }
+
+  // 「今夜」の日付：昼12時より前なら前日の夜として扱う
+  function planDateKey(now = new Date()) {
+    const d = new Date(now);
+    if (d.getHours() < 12) d.setDate(d.getDate() - 1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+  function dayState() {
+    const k = planDateKey();
+    if (!state.days[k]) state.days[k] = { on: {} };
+    return state.days[k];
+  }
+  function isOn(task) {
+    const on = dayState().on;
+    return task.id in on ? !!on[task.id] : !!task.defaultOn;
+  }
+
+  const pad = n => String(n).padStart(2, '0');
+  const toMin = hhmm => { const [h, m] = hhmm.split(':').map(Number); return h * 60 + m; };
+  const fmt = min => { const m = ((min % 1440) + 1440) % 1440; return `${pad(Math.floor(m / 60))}:${pad(m % 60)}`; };
+  const dur = min => min >= 60 ? (min % 60 ? `${Math.floor(min/60)}時間${min%60}分` : `${min/60}時間`) : `${min}分`;
+
+  function compute() {
+    const s = state.settings;
+    const sum = slot => state.tasks.filter(t => t.slot === slot && isOn(t)).reduce((a, t) => a + t.min, 0);
+    const dep = toMin(state.departure) + 1440;           // 翌日
+    const morning = sum('morning');
+    const wake = dep - s.prepMin - morning;
+    const bed = wake - s.sleepMin;
+    const after = sum('afterBath');
+    const gap = Math.max(s.gapMin, after);
+    const bathBy = bed - gap;
+    const bathFrom = bed - Math.max(s.gapMax, gap);
+    const before = sum('beforeBath');
+    const start = bathBy - before;
+    return { dep, wake, bed, bathBy, bathFrom, start, morning, after, before, gap };
+  }
+
+  // 「今」を、今夜の時間軸（0〜2880分）に乗せる
+  function nowOnAxis() {
+    const n = new Date();
+    const m = n.getHours() * 60 + n.getMinutes();
+    return n.getHours() < 12 ? m + 1440 : m;
+  }
+
+  function render() {
+    document.getElementById('departure').value = state.departure;
+    document.getElementById('planDateLabel').textContent = '（' + planDateKey().slice(5).replace('-', '/') + ' の夜）';
+    renderTasks();
+    renderTimeline();
+    renderSettings();
+  }
+
+  function renderTasks() {
+    const root = document.getElementById('taskSlots');
+    root.innerHTML = '';
+    SLOTS.forEach(slot => {
+      const tasks = state.tasks.filter(t => t.slot === slot.id);
+      const h = document.createElement('div');
+      h.className = 'slotname'; h.textContent = slot.label;
+      root.appendChild(h);
+      const wrap = document.createElement('div'); wrap.className = 'chips';
+      tasks.forEach(t => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip' + (isOn(t) ? ' on' : '');
+        b.innerHTML = `${esc(t.name)} <small>${t.min}分</small>`;
+        attachPress(b, () => { dayState().on[t.id] = !isOn(t); save(); render(); }, () => openDialog(t));
+        wrap.appendChild(b);
+      });
+      const add = document.createElement('button');
+      add.type = 'button'; add.className = 'chip add'; add.textContent = '＋ 追加';
+      add.addEventListener('click', () => openDialog(null, slot.id));
+      wrap.appendChild(add);
+      root.appendChild(wrap);
+    });
+  }
+
+  // タップ＝オンオフ、長押し＝編集
+  function attachPress(el, onTap, onLong) {
+    let timer = null, long = false;
+    const start = () => { long = false; timer = setTimeout(() => { long = true; if (navigator.vibrate) navigator.vibrate(10); onLong(); }, 500); };
+    const cancel = () => { clearTimeout(timer); };
+    el.addEventListener('touchstart', start, { passive: true });
+    el.addEventListener('touchend', cancel); el.addEventListener('touchmove', cancel); el.addEventListener('touchcancel', cancel);
+    el.addEventListener('mousedown', start); el.addEventListener('mouseup', cancel); el.addEventListener('mouseleave', cancel);
+    el.addEventListener('click', e => { if (long) { e.preventDefault(); return; } onTap(); });
+    el.addEventListener('contextmenu', e => e.preventDefault());
+  }
+
+  function renderTimeline() {
+    const c = compute();
+    const list = (slot) => state.tasks.filter(t => t.slot === slot && isOn(t)).map(t => `${esc(t.name)} ${t.min}分`).join('・');
+    const items = [];
+    if (c.before > 0) items.push({ t: c.start, what: '夜のタスクを始める', sub: list('beforeBath') });
+    items.push({ t: c.bathBy, what: 'お風呂', sub: c.bathFrom < c.bathBy ? `${fmt(c.bathFrom)}〜${fmt(c.bathBy)} の間に入る` : 'この時刻までに入る' });
+    if (c.after > 0) items.push({ t: null, what: '寝るまでに', sub: list('afterBath') });
+    items.push({ t: c.bed, what: '寝る', sub: `${dur(state.settings.sleepMin)} 眠る` });
+    items.push({ t: c.wake, what: '起きる', sub: `準備 ${dur(state.settings.prepMin)}` + (c.morning ? `・${list('morning')}` : '') });
+    items.push({ t: c.dep, what: '出発', sub: '' });
+
+    const now = nowOnAxis();
+    const nowKeyIsToday = true; // 時間軸は常に「今夜→明朝」なので、そのまま比較できる
+    let nextIdx = -1;
+    items.forEach((it, i) => { if (it.t != null && nextIdx < 0 && it.t > now) nextIdx = i; });
+
+    const ul = document.getElementById('timeline');
+    ul.innerHTML = items.map((it, i) => {
+      const cls = it.t == null ? '' : (i === nextIdx ? 'next' : (it.t <= now ? 'past' : ''));
+      const nextDay = it.t != null && it.t >= 1440;
+      const time = it.t == null ? '' : `<div class="t">${fmt(it.t)}${nextDay ? '<small>あした</small>' : ''}</div>`;
+      return `<li class="${cls}">${time || '<div class="t"></div>'}<div><div class="what">${it.what}</div>${it.sub ? `<div class="sub">${it.sub}</div>` : ''}</div></li>`;
+    }).join('');
+
+    const nl = document.getElementById('nowline');
+    if (nowKeyIsToday && nextIdx >= 0 && nextIdx < items.length && now >= items[0].t - 6 * 60) {
+      const left = items[nextIdx].t - now;
+      nl.textContent = `${items[nextIdx].what}まで あと ${dur(left)}`;
+      nl.classList.remove('hidden');
+    } else nl.classList.add('hidden');
+
+    const warn = document.getElementById('warn');
+    const msgs = [];
+    if (c.start < 17 * 60) msgs.push('夜のタスクの開始が夕方より前になっています。タスクを減らすか、出発を遅らせられないか見てみてください。');
+    if (c.after > state.settings.gapMin) msgs.push(`お風呂のあとのタスクが${dur(c.after)}あるので、お風呂をその分早めています。`);
+    warn.textContent = msgs.join(' ');
+    warn.classList.toggle('hidden', msgs.length === 0);
+  }
+
+  function renderSettings() {
+    const s = state.settings;
+    document.getElementById('setPrep').value = s.prepMin;
+    document.getElementById('setSleep').value = s.sleepMin / 60;
+    document.getElementById('setGapMin').value = s.gapMin;
+    document.getElementById('setGapMax').value = s.gapMax;
+  }
+
+  // ---- イベント ----
+  document.getElementById('departure').addEventListener('change', e => {
+    if (!e.target.value) return;
+    state.departure = e.target.value; save(); renderTimeline();
+  });
+  document.getElementById('btnSettings').addEventListener('click', () => {
+    document.getElementById('settings').classList.toggle('hidden');
+  });
+  const bindSetting = (id, key, mult = 1) => document.getElementById(id).addEventListener('change', e => {
+    const v = Number(e.target.value);
+    if (Number.isFinite(v) && v >= 0) { state.settings[key] = Math.round(v * mult); save(); render(); }
+  });
+  bindSetting('setPrep', 'prepMin');
+  bindSetting('setSleep', 'sleepMin', 60);
+  bindSetting('setGapMin', 'gapMin');
+  bindSetting('setGapMax', 'gapMax');
+
+  // ---- タスクの追加・編集 ----
+  const dlg = document.getElementById('taskDialog');
+  let editing = null;
+  function openDialog(task, slot) {
+    editing = task;
+    document.getElementById('taskDialogTitle').textContent = task ? 'タスクを編集' : 'タスクを追加';
+    document.getElementById('tName').value = task ? task.name : '';
+    document.getElementById('tMin').value = task ? task.min : '';
+    document.getElementById('tSlot').value = task ? task.slot : slot;
+    document.getElementById('tDefault').checked = task ? !!task.defaultOn : false;
+    document.getElementById('tDelete').classList.toggle('hidden', !task);
+    dlg.showModal();
+  }
+  document.getElementById('tCancel').addEventListener('click', () => dlg.close());
+  document.getElementById('tDelete').addEventListener('click', () => {
+    if (!editing) return;
+    if (!confirm(`「${editing.name}」を消しますか？`)) return;
+    state.tasks = state.tasks.filter(t => t.id !== editing.id);
+    save(); dlg.close(); render();
+  });
+  document.getElementById('taskForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const name = document.getElementById('tName').value.trim();
+    const min = Number(document.getElementById('tMin').value);
+    const slot = document.getElementById('tSlot').value;
+    const defaultOn = document.getElementById('tDefault').checked;
+    if (!name || !(min > 0)) return;
+    if (editing) Object.assign(editing, { name, min, slot, defaultOn });
+    else {
+      const t = { id: 't' + Date.now().toString(36), name, min, slot, defaultOn };
+      state.tasks.push(t);
+      dayState().on[t.id] = true; // 追加した日はオンにする
+    }
+    save(); dlg.close(); render();
+  });
+
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+  // ---- LINE内ブラウザ・ホーム画面の案内 ----
+  const ua = navigator.userAgent || '';
+  const standalone = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  const isIOS = /iPhone|iPad|iPod/.test(ua);
+  const inLine = /\bLine\//i.test(ua);
+  if (inLine) {
+    const u = new URL(location.href); u.searchParams.set('openExternalBrowser', '1');
+    document.getElementById('lineOpen').href = u.toString();
+    document.getElementById('lineBanner').classList.remove('hidden');
+  } else if (isIOS && !standalone) {
+    document.getElementById('installHint').classList.remove('hidden');
+  }
+
+  document.getElementById('version').textContent = 'v' + VERSION;
+  render();
+  // 1分ごとに「今」の位置を更新
+  setInterval(renderTimeline, 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  }
+})();
+</script>
+</body>
+</html>
