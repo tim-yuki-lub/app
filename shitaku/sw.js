@@ -1,5 +1,5 @@
 // オフラインでも開けるようにする。VERSION を上げると古いキャッシュを捨てる。
-const VERSION = 'shitaku-v1.0.0';
+const VERSION = 'shitaku-v1.1.0';
 const FILES = ['./', './index.html', './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png'];
 
 self.addEventListener('install', e => {
