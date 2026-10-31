@@ -149,6 +149,12 @@
   </section>
 
   <section class="card">
+    <h2>時間の枠 <span id="frameDateLabel" style="font-weight:400"></span></h2>
+    <div id="frameSlots"></div>
+    <p class="hint" style="margin:10px 0 0">タップで今夜の長さを選ぶ。長押しで直す・消す。</p>
+  </section>
+
+  <section class="card">
     <h2>今夜の流れ</h2>
     <p class="nowline hidden" id="nowline"></p>
     <ul class="timeline" id="timeline"></ul>
@@ -157,11 +163,12 @@
 
   <section class="card settings hidden" id="settings">
     <h2>設定</h2>
+    <p class="hint" style="margin:0 0 6px">「いつも」の長さ。日ごとの長さは「時間の枠」で選べます。</p>
     <label>朝の準備 <span class="row"><input type="number" id="setPrep" min="0" step="5" inputmode="numeric"><span class="unit">分</span></span></label>
     <label>睡眠 <span class="row"><input type="number" id="setSleep" min="0" step="0.5" inputmode="decimal"><span class="unit">時間</span></span></label>
     <label>お風呂から寝るまで（最短） <span class="row"><input type="number" id="setGapMin" min="0" step="15" inputmode="numeric"><span class="unit">分</span></span></label>
     <label>お風呂から寝るまで（長くて） <span class="row"><input type="number" id="setGapMax" min="0" step="15" inputmode="numeric"><span class="unit">分</span></span></label>
-    <p class="hint" style="margin:12px 0 0">タスクの名前や所要時間は、チップを長押しすると変えられます。</p>
+    <p class="hint" style="margin:12px 0 0">タスクや時間の枠は、チップを長押しすると直したり消したりできます。</p>
   </section>
 
   <section class="card hint hidden" id="installHint">
@@ -197,15 +204,49 @@
   </form>
 </dialog>
 
+<dialog id="frameDialog">
+  <form method="dialog" id="frameForm">
+    <h3 id="frameDialogTitle">時間の枠</h3>
+    <label><span id="fLabelA">長さ</span> <input type="number" id="fA" required min="0" step="5" inputmode="decimal"></label>
+    <label id="fRowB">長くて <input type="number" id="fB" min="0" step="15" inputmode="numeric" placeholder="分"></label>
+    <label style="display:flex;align-items:center;gap:8px;flex-direction:row"><input type="checkbox" id="fDefault" style="width:auto"> いつもこれにする</label>
+    <div class="actions">
+      <button type="button" class="btn del hidden" id="fDelete">削除</button>
+      <button type="button" class="btn ghost" id="fCancel">やめる</button>
+      <button type="submit" class="btn">保存</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 (() => {
-  const VERSION = '1.0.0';
+  const VERSION = '1.1.0';
   const KEY = 'shitaku.v1';
   const SLOTS = [
     { id: 'beforeBath', label: 'お風呂の前に' },
     { id: 'afterBath',  label: 'お風呂のあと、寝るまでに' },
     { id: 'morning',    label: '朝、出発の前に' },
   ];
+  // 時間の枠：それぞれ候補をいくつか持ち、日ごとにタップで選ぶ
+  const FRAMES = [
+    { id: 'prep',  label: '朝の準備',             unit: 'min' },
+    { id: 'sleep', label: '睡眠',                 unit: 'hour' },
+    { id: 'bath',  label: 'お風呂から寝るまで',   unit: 'range' },
+  ];
+  const optLabel = (f, o) => f.unit === 'range' ? (o.max > o.v ? `${dur(o.v)}〜${dur(o.max)}` : dur(o.v)) : dur(o.v);
+  const newId = () => 'o' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  // 設定値から枠を作る（前のバージョンのデータから移すときにも使う）
+  function framesFrom(st) {
+    const mk = (vals, defV, extra = () => ({})) => {
+      const opts = vals.map(v => ({ id: newId(), v, ...extra(v) }));
+      let d = opts.find(o => o.v === defV);
+      if (!d) { d = { id: newId(), v: defV, ...extra(defV) }; opts.push(d); opts.sort((a, b) => a.v - b.v); }
+      return { opts, def: d.id };
+    };
+    const bathMax = { 60: 90, 90: 120, 120: 180 };
+    const bath = mk([60, 90, 120], st.gapMin, v => ({ max: v === st.gapMin ? st.gapMax : (bathMax[v] || v) }));
+    return { prep: mk([30, 45, 60, 90], st.prepMin), sleep: mk([420, 450, 480], st.sleepMin), bath };
+  }
 
   const defaults = () => ({
     settings: { prepMin: 60, sleepMin: 480, gapMin: 120, gapMax: 180 },
@@ -225,11 +266,12 @@
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
-      if (!raw) return defaults();
+      if (!raw) { const d = defaults(); d.frames = framesFrom(d.settings); return d; }
       const s = JSON.parse(raw);
       const d = defaults();
-      return { ...d, ...s, settings: { ...d.settings, ...(s.settings || {}) }, days: s.days || {} };
-    } catch (e) { return defaults(); }
+      const st = { ...d.settings, ...(s.settings || {}) };
+      return { ...d, ...s, settings: st, frames: s.frames || framesFrom(st), days: s.days || {} };
+    } catch (e) { const d = defaults(); d.frames = framesFrom(d.settings); return d; }
   }
   function save() {
     try {
@@ -250,8 +292,16 @@
   function dayState() {
     const k = planDateKey();
     if (!state.days[k]) state.days[k] = { on: {} };
+    if (!state.days[k].pick) state.days[k].pick = {};
     return state.days[k];
   }
+  // その日に選ばれている候補（選んでいなければ「いつも」）
+  function pickedOpt(fid) {
+    const fr = state.frames[fid];
+    const id = dayState().pick[fid];
+    return fr.opts.find(o => o.id === id) || fr.opts.find(o => o.id === fr.def) || fr.opts[0];
+  }
+  const defOpt = fid => { const fr = state.frames[fid]; return fr.opts.find(o => o.id === fr.def) || fr.opts[0]; };
   function isOn(task) {
     const on = dayState().on;
     return task.id in on ? !!on[task.id] : !!task.defaultOn;
@@ -263,7 +313,8 @@
   const dur = min => min >= 60 ? (min % 60 ? `${Math.floor(min/60)}時間${min%60}分` : `${min/60}時間`) : `${min}分`;
 
   function compute() {
-    const s = state.settings;
+    const bath = pickedOpt('bath');
+    const s = { prepMin: pickedOpt('prep').v, sleepMin: pickedOpt('sleep').v, gapMin: bath.v, gapMax: Math.max(bath.max || 0, bath.v) };
     const sum = slot => state.tasks.filter(t => t.slot === slot && isOn(t)).reduce((a, t) => a + t.min, 0);
     const dep = toMin(state.departure) + 1440;           // 翌日
     const morning = sum('morning');
@@ -275,7 +326,7 @@
     const bathFrom = bed - Math.max(s.gapMax, gap);
     const before = sum('beforeBath');
     const start = bathBy - before;
-    return { dep, wake, bed, bathBy, bathFrom, start, morning, after, before, gap };
+    return { dep, wake, bed, bathBy, bathFrom, start, morning, after, before, gap, s };
   }
 
   // 「今」を、今夜の時間軸（0〜2880分）に乗せる
@@ -287,8 +338,11 @@
 
   function render() {
     document.getElementById('departure').value = state.departure;
-    document.getElementById('planDateLabel').textContent = '（' + planDateKey().slice(5).replace('-', '/') + ' の夜）';
+    const dl = '（' + planDateKey().slice(5).replace('-', '/') + ' の夜）';
+    document.getElementById('planDateLabel').textContent = dl;
+    document.getElementById('frameDateLabel').textContent = dl;
     renderTasks();
+    renderFrames();
     renderTimeline();
     renderSettings();
   }
@@ -318,6 +372,36 @@
     });
   }
 
+  function renderFrames() {
+    const root = document.getElementById('frameSlots');
+    root.innerHTML = '';
+    FRAMES.forEach(f => {
+      const fr = state.frames[f.id];
+      const cur = pickedOpt(f.id);
+      const h = document.createElement('div');
+      h.className = 'slotname'; h.textContent = f.label;
+      root.appendChild(h);
+      const wrap = document.createElement('div'); wrap.className = 'chips';
+      fr.opts.forEach(o => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'chip' + (o.id === cur.id ? ' on' : '');
+        b.innerHTML = esc(optLabel(f, o)) + (o.id === fr.def ? ' <small>いつも</small>' : '');
+        attachPress(b, () => {
+          const pick = dayState().pick;
+          if (o.id === fr.def) delete pick[f.id]; else pick[f.id] = o.id;
+          save(); render();
+        }, () => openFrameDialog(f, o));
+        wrap.appendChild(b);
+      });
+      const add = document.createElement('button');
+      add.type = 'button'; add.className = 'chip add'; add.textContent = '＋ 追加';
+      add.addEventListener('click', () => openFrameDialog(f, null));
+      wrap.appendChild(add);
+      root.appendChild(wrap);
+    });
+  }
+
   // タップ＝オンオフ、長押し＝編集
   function attachPress(el, onTap, onLong) {
     let timer = null, long = false;
@@ -327,7 +411,8 @@
     el.addEventListener('touchend', cancel); el.addEventListener('touchmove', cancel); el.addEventListener('touchcancel', cancel);
     el.addEventListener('mousedown', start); el.addEventListener('mouseup', cancel); el.addEventListener('mouseleave', cancel);
     el.addEventListener('click', e => { if (long) { e.preventDefault(); return; } onTap(); });
-    el.addEventListener('contextmenu', e => e.preventDefault());
+    // PCの右クリックは長押しと同じ
+    el.addEventListener('contextmenu', e => { e.preventDefault(); if (!long) { clearTimeout(timer); long = true; onLong(); setTimeout(() => long = false, 0); } });
   }
 
   function renderTimeline() {
@@ -337,8 +422,8 @@
     if (c.before > 0) items.push({ t: c.start, what: '夜のタスクを始める', sub: list('beforeBath') });
     items.push({ t: c.bathBy, what: 'お風呂', sub: c.bathFrom < c.bathBy ? `${fmt(c.bathFrom)}〜${fmt(c.bathBy)} の間に入る` : 'この時刻までに入る' });
     if (c.after > 0) items.push({ t: null, what: '寝るまでに', sub: list('afterBath') });
-    items.push({ t: c.bed, what: '寝る', sub: `${dur(state.settings.sleepMin)} 眠る` });
-    items.push({ t: c.wake, what: '起きる', sub: `準備 ${dur(state.settings.prepMin)}` + (c.morning ? `・${list('morning')}` : '') });
+    items.push({ t: c.bed, what: '寝る', sub: `${dur(c.s.sleepMin)} 眠る` });
+    items.push({ t: c.wake, what: '起きる', sub: (c.s.prepMin ? `準備 ${dur(c.s.prepMin)}` : '') + (c.morning ? `${c.s.prepMin ? '・' : ''}${list('morning')}` : '') });
     items.push({ t: c.dep, what: '出発', sub: '' });
 
     const now = nowOnAxis();
@@ -364,17 +449,17 @@
     const warn = document.getElementById('warn');
     const msgs = [];
     if (c.start < 17 * 60) msgs.push('夜のタスクの開始が夕方より前になっています。タスクを減らすか、出発を遅らせられないか見てみてください。');
-    if (c.after > state.settings.gapMin) msgs.push(`お風呂のあとのタスクが${dur(c.after)}あるので、お風呂をその分早めています。`);
+    if (c.after > c.s.gapMin) msgs.push(`お風呂のあとのタスクが${dur(c.after)}あるので、お風呂をその分早めています。`);
     warn.textContent = msgs.join(' ');
     warn.classList.toggle('hidden', msgs.length === 0);
   }
 
   function renderSettings() {
-    const s = state.settings;
-    document.getElementById('setPrep').value = s.prepMin;
-    document.getElementById('setSleep').value = s.sleepMin / 60;
-    document.getElementById('setGapMin').value = s.gapMin;
-    document.getElementById('setGapMax').value = s.gapMax;
+    const b = defOpt('bath');
+    document.getElementById('setPrep').value = defOpt('prep').v;
+    document.getElementById('setSleep').value = defOpt('sleep').v / 60;
+    document.getElementById('setGapMin').value = b.v;
+    document.getElementById('setGapMax').value = Math.max(b.max || 0, b.v);
   }
 
   // ---- イベント ----
@@ -385,14 +470,59 @@
   document.getElementById('btnSettings').addEventListener('click', () => {
     document.getElementById('settings').classList.toggle('hidden');
   });
-  const bindSetting = (id, key, mult = 1) => document.getElementById(id).addEventListener('change', e => {
+  // 設定画面の値は「いつも」の候補を書きかえる
+  const bindSetting = (id, fid, key, mult = 1) => document.getElementById(id).addEventListener('change', e => {
     const v = Number(e.target.value);
-    if (Number.isFinite(v) && v >= 0) { state.settings[key] = Math.round(v * mult); save(); render(); }
+    if (Number.isFinite(v) && v >= 0) { defOpt(fid)[key] = Math.round(v * mult); save(); render(); }
   });
-  bindSetting('setPrep', 'prepMin');
-  bindSetting('setSleep', 'sleepMin', 60);
-  bindSetting('setGapMin', 'gapMin');
-  bindSetting('setGapMax', 'gapMax');
+  bindSetting('setPrep', 'prep', 'v');
+  bindSetting('setSleep', 'sleep', 'v', 60);
+  bindSetting('setGapMin', 'bath', 'v');
+  bindSetting('setGapMax', 'bath', 'max');
+
+  // ---- 時間の枠の追加・編集 ----
+  const fdlg = document.getElementById('frameDialog');
+  let fEditing = null, fFrame = null;
+  function openFrameDialog(f, o) {
+    fFrame = f; fEditing = o;
+    const hour = f.unit === 'hour';
+    document.getElementById('frameDialogTitle').textContent = `${f.label}を${o ? '直す' : '追加'}`;
+    document.getElementById('fLabelA').textContent = f.unit === 'range' ? '最短（分）' : (hour ? '長さ（時間）' : '長さ（分）');
+    const a = document.getElementById('fA');
+    a.step = hour ? '0.5' : (f.unit === 'range' ? '15' : '5');
+    a.value = o ? (hour ? o.v / 60 : o.v) : '';
+    document.getElementById('fRowB').classList.toggle('hidden', f.unit !== 'range');
+    document.getElementById('fB').value = o && f.unit === 'range' ? Math.max(o.max || 0, o.v) : '';
+    document.getElementById('fDefault').checked = !!o && state.frames[f.id].def === o.id;
+    document.getElementById('fDelete').classList.toggle('hidden', !o);
+    fdlg.showModal();
+  }
+  document.getElementById('fCancel').addEventListener('click', () => fdlg.close());
+  document.getElementById('fDelete').addEventListener('click', () => {
+    const fr = state.frames[fFrame.id];
+    if (fr.opts.length <= 1) { alert('最後のひとつは消せません。長さを直してください。'); return; }
+    if (!confirm(`「${optLabel(fFrame, fEditing)}」を消しますか？`)) return;
+    fr.opts = fr.opts.filter(o => o.id !== fEditing.id);
+    if (fr.def === fEditing.id) fr.def = fr.opts[0].id;
+    Object.values(state.days).forEach(d => { if (d.pick && d.pick[fFrame.id] === fEditing.id) delete d.pick[fFrame.id]; });
+    save(); fdlg.close(); render();
+  });
+  document.getElementById('frameForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const f = fFrame, fr = state.frames[f.id];
+    const a = Number(document.getElementById('fA').value);
+    if (!Number.isFinite(a) || a < 0 || document.getElementById('fA').value === '') return;
+    const v = Math.round(f.unit === 'hour' ? a * 60 : a);
+    const o = fEditing || { id: newId() };
+    o.v = v;
+    if (f.unit === 'range') { const b = Number(document.getElementById('fB').value); o.max = Number.isFinite(b) && b > v ? Math.round(b) : v; }
+    if (!fEditing) {
+      fr.opts.push(o); fr.opts.sort((x, y) => x.v - y.v);
+      dayState().pick[f.id] = o.id; // 追加した日はそれを選ぶ
+    }
+    if (document.getElementById('fDefault').checked) { fr.def = o.id; delete dayState().pick[f.id]; }
+    save(); fdlg.close(); render();
+  });
 
   // ---- タスクの追加・編集 ----
   const dlg = document.getElementById('taskDialog');
