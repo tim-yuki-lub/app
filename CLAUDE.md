@@ -4,7 +4,7 @@
 
 自分や家族のための小さなアプリを、1アプリ1フォルダで置いておくリポジトリ。全部 PWA（HTML/CSS/JS のみ、サーバーなし、ログインなし）。公開は GitHub Pages で、URLは `https://tim-yuki-lub.github.io/app/<フォルダ名>/`。
 
-実務（仕事）のコードは置かない。個人の内面の話は `mind`、仕事は `funeral`。
+実務（仕事）のコードは置かない。個人の内面の話は `mind`、仕事・事業は `business`（旧 funeral）。
 
 ## 構成
 
@@ -46,7 +46,7 @@ app/
 ユーザーはコミット・プッシュ・PR・マージを自分ではしない。すべてClaudeがやり、確認も取らない。報告ではgitの用語を使わず「GitHubに反映しました」とだけ言う。
 
 - **クラウド（スマホ）**：作業のまとまりが終わるたびに、指定されたブランチにコミット→push→mainへのPRを作成→そのままマージ（merge方式。squashにしない）までを1セットで行う。続けて作業する前に `origin/main` を取り込んでから始める。
-- **Mac**：`~/Claude/app` の main で直接作業する。5分ごとの自動同期（funeral の `scripts/sync/`。`~/Claude/` 直下のフォルダは全部対象）があるので、Claudeもユーザーも何もしなくてよい。すぐ反映したいときは `bash ~/Claude/funeral/scripts/sync/sync.sh "$PWD"`。
+- **Mac**：`~/Claude/app` の main で直接作業する。5分ごとの自動同期（business の `scripts/sync/`。`~/Claude/` 直下のフォルダは全部対象）があるので、Claudeもユーザーも何もしなくてよい。すぐ反映したいときは `bash ~/Claude/business/scripts/sync/sync.sh "$PWD"`。
 - **ぶつかったとき**（Macに「同期を直して」の通知が出た／ユーザーにそう言われた）：Claudeが `git pull --rebase origin main` で解決し、両方の変更を残す。どちらかを捨てるしかない場合だけユーザーに聞く。解決後は `.git/sync-conflict` を消して push する。
 
 ## 付録：アイコン生成スクリプト（shitaku）
